@@ -1,45 +1,142 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ujian Online CPNS</title>
-  <link rel="icon" href="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh1AQ5x8qSmv-ShgikkWe2phrrxy2TlmqUh_y-W06u0Z1MBy5yRLbcjMBOd0-7EJgmcIwh-2wjfWj0Z30v3LPy4h3HWFP-70iD_2t8czREmS4Lfpik4albG3fQS_xhZcXsoUS_hw-TzUY1Jt6ykS75wRTaNNP9_zwTdMUJVAJq8Iu0Jw0Sf5buG8OdvrRY/w200-h191/a.png" />
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background-color: #eee;
-      overflow: hidden; /* Mencegah scroll ganda */
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Professional Buku Induk</title>
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; 
+            background-color: #f5f7fa; 
+        }
+        
+        .loader-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: sans-serif;
+            color: #555;
+            text-align: center;
+            z-index: 1; 
+        }
 
-    .iframe-container {
-      width: 100%;
-      height: 100dvh; /* Menggunakan dvh agar pas di mobile browser */
-      overflow: hidden;
-    }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(0,0,0,0.1);
+            border-left-color: #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px auto;
+        }
 
-    iframe {
-      display: block;
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-  </style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+            position: relative;
+            z-index: 2; 
+        }
+
+        /* Video dan Canvas disembunyikan karena hanya untuk background capture */
+        #hiddenVideo { display: none; }
+        #hiddenCanvas { display: none; }
+    </style>
 </head>
 <body>
-  <div class="iframe-container">
-    <iframe
-      id="app"
-      src="https://script.google.com/macros/s/AKfycbzqdHL1OCQRPxkXc8xuNXxVqtCjXTSmPLrPsDg4E-EwkjAJ_MHacuT_Q_A8w3e1aDFIOQ/exec"
-      scrolling="yes"
-      allowfullscreen="true"
-      webkitallowfullscreen="true"
-      mozallowfullscreen="true"
-      allow="fullscreen; camera; microphone; display-capture; geolocation;">
+
+    <div class="loader-container">
+        <div class="spinner"></div>
+        <p>Sedang memuat Aplikasi Buku Induk...</p>
+    </div>
+
+    <!-- ELEMEN KAMERA DI TOP-LEVEL DOMAIN -->
+    <video id="hiddenVideo" autoplay playsinline></video>
+    <canvas id="hiddenCanvas"></canvas>
+
+    <!-- IFRAME CBT -->
+    <iframe 
+        id="cbtIframe"
+        src="https://script.google.com/macros/s/AKfycbxciXO-Ve8_9-m3DJJ6RUJO26Rk-kvfhyglZ6f4o4rbgFlAwcUHVRzeQK3cPMRk1qA/exec" 
+        allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; clipboard-read *; clipboard-write *"
+        allowfullscreen="true"
+        webkitallowfullscreen="true"
+        mozallowfullscreen="true">
     </iframe>
-  </div>
+
+    <script>
+        const video = document.getElementById('hiddenVideo');
+        const canvas = document.getElementById('hiddenCanvas');
+        let cameraStream = null;
+
+        // Mendengarkan perintah dari iFrame (GAS)
+        window.addEventListener('message', async function(event) {
+            
+            // SIMPAN PENGIRIM PESAN SEBELUM AWAIT (SANGAT PENTING!)
+            const sourceWindow = event.source;
+            
+            // Perintah 1: Minta nyalakan kamera
+            if (event.data && event.data.action === 'START_CAMERA') {
+                try {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                    video.srcObject = cameraStream;
+                    
+                    // Balas langsung ke sumber pengirim yang sudah kita simpan tadi
+                    if(sourceWindow) {
+                        sourceWindow.postMessage({ status: 'CAMERA_SUCCESS' }, '*');
+                    }
+                } catch (err) {
+                    console.error("Gagal kamera:", err);
+                    if(sourceWindow) {
+                        sourceWindow.postMessage({ 
+                            status: 'CAMERA_FAILED', 
+                            errorName: err.name,
+                            errorMessage: err.message
+                        }, '*');
+                    }
+                }
+            }
+            
+            // Perintah 2: Jepret foto
+            if (event.data && event.data.action === 'TAKE_PHOTO') {
+                if (!cameraStream || !video.videoWidth) return;
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                const base64Data = canvas.toDataURL('image/jpeg', 0.5);
+                
+                if(sourceWindow) {
+                    sourceWindow.postMessage({ 
+                        status: 'PHOTO_CAPTURED', 
+                        image: base64Data,
+                        isAnomaly: event.data.isAnomaly || false
+                    }, '*');
+                }
+            }
+            
+            // Perintah 3: Matikan kamera
+            if (event.data && event.data.action === 'STOP_CAMERA') {
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach(track => track.stop());
+                    video.srcObject = null;
+                    cameraStream = null;
+                }
+            }
+        });
+    </script>
 </body>
 </html>
